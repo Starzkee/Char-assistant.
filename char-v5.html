@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Char V5 · Command centre</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#111719;color:#eff6f3;font:16px system-ui}main{max-width:35rem;margin:auto;padding:1.5rem}header{border-bottom:1px solid #40534d;margin-bottom:1rem}h1{font-size:3rem;margin:0;color:#a9f3cc}p,dt{color:#bfcec8}section{background:#1c2725;border-radius:1rem;padding:1rem;margin:1rem 0}h2{margin:0 0 .7rem}dl{display:grid;grid-template-columns:auto 1fr;gap:.5rem 1rem}dd{margin:0;overflow-wrap:anywhere}label{display:block;margin:.7rem 0 .3rem}input,textarea,button{font:inherit;border-radius:.55rem;padding:.7rem}input,textarea{width:100%;background:#111719;color:inherit;border:1px solid #789388}button{background:#a9f3cc;color:#14271f;border:0;margin-top:.7rem;font-weight:700}li{margin:.6rem 0;overflow-wrap:anywhere}li button{margin:0 0 0 .5rem;padding:.35rem;font-weight:400}button{cursor:pointer}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #fff;outline-offset:2px}.actions{display:flex;gap:.5rem;flex-wrap:wrap}.secondary{background:#344b43;color:#eff6f3}#status{min-height:1.5em}small{color:#bfcec8}
+.reply{white-space:pre-wrap;background:#101c1a;border:1px solid #40534d;padding:1rem;border-radius:.6rem;min-height:4rem}.examples{font-size:.9rem;color:#bfcec8}#command{font-size:16px}</style>
+<main>
+<header><h1>Char V5</h1><p>Phone assistant · voice commands, spoken replies and battery trends</p></header>
+<section><h2>Talk to Char</h2><form id="command-form"><label for="command">Type a command</label><input id="command" autocomplete="off" placeholder="e.g. Char, show battery" required><button type="submit">Ask Char</button> <button type="button" id="listen" class="secondary">🎙️ Speak to Char</button> <button type="button" id="stop-voice" class="secondary">Stop voice</button></form><label style="display:flex;align-items:center;gap:.6rem"><input id="speak-replies" type="checkbox" checked style="width:auto"> Read answers aloud</label><p id="voice-status" role="status">Voice ready to test. Microphone access depends on Chrome and how this file is opened.</p><p class="examples">Try: how long till flat · how much battery left · what’s using my battery · help · show battery · scan phone · what do you know · remember my phone details · remember Wi-Fi: home network · find Wi-Fi · show notes</p><p id="reply" class="reply" role="status" aria-live="polite">G’day! Type help to see what I can do.</p><h3>Conversation history</h3><div id="history" class="reply" aria-live="polite">No commands yet.</div><button type="button" class="secondary" id="clear-history">Clear history</button></section>
+<section>
+<h2>Device profile</h2>
+<dl><dt>Model</dt><dd>TANK 2 Pro</dd><dt>Android version</dt><dd>15 (your setup)</dd><dt>Screen</dt><dd id="screen"></dd><dt>Pixel ratio</dt><dd id="ratio"></dd></dl>
+<p>The browser reports screen size in CSS pixels. To check your model, Android version or storage, open Settings and search for “About phone” or “Storage”.</p>
+</section>
+<section>
+<h2>Phone Explorer</h2><p id="battery-trend">Battery trend: waiting for readings.</p>
+<p>Discover what this browser is allowed to see. Some Android details are restricted.</p>
+<dl id="explorer"></dl>
+<div class="actions"><button type="button" id="scan">Scan phone</button><button type="button" class="secondary" id="remember-scan">Remember scan</button></div>
+<p id="scan-status" role="status"></p>
+</section>
+<section>
+<h2>Teach Char</h2>
+<form>
+<label for="topic">Topic</label>
+<input id="topic" required maxlength="80" placeholder="e.g. Storage">
+<label for="fact">What should Char remember?</label>
+<textarea id="fact" required maxlength="500" rows="3" placeholder="e.g. What Settings says about my storage"></textarea>
+<button type="submit">Save to memory</button>
+</form>
+<p id="status" role="status"></p>
+</section>
+<section><h2>What Char knows</h2><p id="empty">Your saved phone notes will appear here.</p><ul id="notes"></ul><div class="actions"><button type="button" class="secondary" id="export">Back up notes</button><button type="button" class="secondary" id="import">Restore notes</button><input id="file" type="file" accept="application/json,.json" hidden></div><p><small>Notes stay in this browser when storage is allowed. Back up notes before clearing browser data or moving phones.</small></p></section>
+</main>
+<script>
+const key = 'char-phone-notes-v1';
+const byId = id => document.getElementById(id);
+const status = byId('status');
+let notes = [];
+try {
+  notes = JSON.parse(localStorage.getItem(key) || '[]');
+  if (!Array.isArray(notes)) notes = [];
+} catch {
+  status.textContent = 'Saved notes could not be loaded in this browser.';
+}
+function save(next) {
+  notes = next;
+  try {
+    localStorage.setItem(key, JSON.stringify(notes));
+    status.textContent = 'Saved! Your note is stored in this browser.';
+  } catch {
+    status.textContent = 'Note added for this session only. Browser storage is blocked; use Back up notes.';
+  }
+  render();
+}
+function render() {
+  byId('empty').hidden = notes.length > 0;
+  const items = notes.map(({topic, fact}, index) => {
+    const item = document.createElement('li');
+    const title = document.createElement('strong');
+    title.textContent = topic;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'Remove';
+    remove.setAttribute('aria-label', 'Remove note about ' + topic);
+    remove.onclick = () => save(notes.filter((_, position) => position !== index));
+    item.append(title, ' — ' + fact, remove);
+    return item;
+  });
+  byId('notes').replaceChildren(...items);
+}
+function showScreen() {
+  byId('screen').textContent = screen.width + ' × ' + screen.height;
+  byId('ratio').textContent = devicePixelRatio + '×';
+}
+document.querySelector('section:nth-of-type(4) form').onsubmit = event => {
+  event.preventDefault();
+  const topic = byId('topic').value.trim();
+  const fact = byId('fact').value.trim();
+  if (!topic || !fact) {
+    status.textContent = 'Enter a topic and a note first.';
+    return;
+  }
+  save([...notes, {topic, fact}]);
+  event.currentTarget.reset();
+};
+byId('export').onclick = () => {
+  const blob = new Blob([JSON.stringify(notes, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'char-notes-backup.json'; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  status.textContent = 'Backup download started.';
+};
+byId('import').onclick = () => byId('file').click();
+byId('file').onchange = async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (!Array.isArray(data) || !data.every(n => n && typeof n.topic === 'string' && typeof n.fact === 'string')) throw Error('Invalid backup');
+    save([...notes, ...data.map(n => ({topic:n.topic.slice(0,80), fact:n.fact.slice(0,500)}))]);
+    status.textContent = 'Backup restored: ' + data.length + ' notes added.';
+  } catch { status.textContent = 'Could not read that backup file.'; }
+  event.target.value = '';
+};
+let lastScan = [];
+async function scanPhone() {
+  const rows = [
+    ['Screen', screen.width + ' × ' + screen.height + ' CSS pixels'],
+    ['Pixel ratio', String(devicePixelRatio) + '×'],
+    ['Viewport', innerWidth + ' × ' + innerHeight + ' CSS pixels'],
+    ['Browser', navigator.userAgent || 'Unavailable'],
+    ['Language', navigator.language || 'Unavailable'],
+    ['Online', navigator.onLine ? 'Yes' : 'No'],
+    ['CPU threads (reported)', navigator.hardwareConcurrency ? String(navigator.hardwareConcurrency) : 'Unavailable'],
+    ['Approx. device RAM', navigator.deviceMemory ? navigator.deviceMemory + ' GB (browser estimate)' : 'Unavailable'],
+    ['Touch support', navigator.maxTouchPoints ? 'Yes (' + navigator.maxTouchPoints + ' points)' : 'Not reported'],
+    ['Connection', navigator.connection?.effectiveType || 'Unavailable']
+  ];
+  try {
+    if (navigator.getBattery) {
+      const b = await navigator.getBattery();
+      rows.push(['Battery', Math.round(b.level * 100) + '%; ' + (b.charging ? 'charging' : 'not charging')]);
+      recordBattery(b);
+    } else rows.push(['Battery', 'Unavailable in this browser']);
+  } catch { rows.push(['Battery', 'Access blocked']); }
+  try {
+    if (navigator.storage?.estimate) {
+      const est = await navigator.storage.estimate();
+      rows.push(['Browser storage used', est.usage == null ? 'Unavailable' : (est.usage / 1048576).toFixed(1) + ' MB']);
+      rows.push(['Browser storage quota', est.quota == null ? 'Unavailable' : (est.quota / 1073741824).toFixed(2) + ' GB (not total phone storage)']);
+    }
+  } catch { rows.push(['Browser storage', 'Unavailable']); }
+  lastScan = rows;
+  const dl = byId('explorer'); dl.replaceChildren();
+  for (const [name, value] of rows) {
+    const dt = document.createElement('dt'); dt.textContent = name;
+    const dd = document.createElement('dd'); dd.textContent = value;
+    dl.append(dt, dd);
+  }
+  byId('scan-status').textContent = 'Scan complete. ' + rows.length + ' browser-accessible details checked.';
+}
+byId('scan').onclick = scanPhone;
+byId('remember-scan').onclick = () => {
+  if (!lastScan.length) { byId('scan-status').textContent = 'Scan your phone first.'; return; }
+  const date = new Date().toLocaleString();
+  save([...notes, ...lastScan.map(([topic, fact]) => ({topic: 'Scan: ' + topic, fact: fact + ' (checked ' + date + ')'}))]);
+  byId('scan-status').textContent = 'Scan added to Char notes. Back up notes to keep a separate copy.';
+};
+
+const reply = message => { byId('reply').textContent = message; if (byId('speak-replies').checked) speak(message); };
+function speak(message) {
+  if (!('speechSynthesis' in window)) { byId('voice-status').textContent='Speech output is unavailable in this browser.'; return; }
+  speechSynthesis.cancel();
+  const utterance=new SpeechSynthesisUtterance(String(message).slice(0,1200));
+  utterance.lang='en-AU'; utterance.rate=1;
+  speechSynthesis.speak(utterance);
+}
+
+const historyKey = 'char-v4-history';
+const batteryKey = 'char-v4-battery-samples';
+function readArray(key) { try { const a=JSON.parse(localStorage.getItem(key)||'[]'); return Array.isArray(a)?a:[]; } catch { return []; } }
+function storeArray(key, value) { try { localStorage.setItem(key,JSON.stringify(value)); } catch {} }
+let history = readArray(historyKey);
+let batterySamples = readArray(batteryKey);
+function renderHistory() {
+  byId('history').textContent = history.length ? history.map(h => h.who+': '+h.text).join('\n\n') : 'No commands yet.';
+}
+byId('clear-history').onclick = () => { history=[];storeArray(historyKey,history);renderHistory(); };
+function recordBattery(b) {
+  const now=Date.now(), percent=Math.round(b.level*100);
+  if (!Number.isFinite(percent)) return;
+  const last=batterySamples[batterySamples.length-1];
+  if (!last || now-last.time>=60000 || last.percent!==percent || last.charging!==b.charging) {
+    batterySamples.push({time:now,percent,charging:b.charging});
+    batterySamples=batterySamples.filter(x => x && Number.isFinite(x.time) && x.time>now-86400000).slice(-200);
+    storeArray(batteryKey,batterySamples);
+  }
+  byId('battery-trend').textContent='Battery trend: '+batteryEstimate();
+}
+function batteryEstimate() {
+  const a=batterySamples;
+  const last=a[a.length-1];
+  if (!last) return 'Battery readings unavailable.';
+  if (last.charging) return 'Phone is charging; discharge estimate paused.';
+  const candidates=a.filter(x => !x.charging && x.time<last.time-15*60000 && x.time>last.time-12*3600000 && x.percent>last.percent);
+  const first=candidates[0];
+  if (!first) return 'Not enough discharge data yet. Keep this page open and check again later.';
+  const hours=(last.time-first.time)/3600000;
+  const rate=(first.percent-last.percent)/hours;
+  if (rate<=0 || !Number.isFinite(rate)) return 'Not enough reliable discharge data yet.';
+  const remaining=last.percent/rate;
+  if (remaining>240) return 'Battery drain too small for a useful estimate.';
+  return 'About '+(remaining<2?Math.round(remaining*60)+' minutes':remaining.toFixed(1)+' hours')+' until empty at the observed '+rate.toFixed(1)+'%/hour drain rate. Rough estimate only; usage can change.';
+}
+function batteryReply() {
+  const b=lastScan.find(([name])=>name==='Battery');
+  return (b?'Battery: '+b[1]+'. ':'Battery level unavailable. ')+batteryEstimate();
+}
+const oldReply = reply;
+
+function answerCommand(raw) {
+  const input = raw.trim().replace(/^char[,! ]*/i, '').trim();
+  const lower = input.toLowerCase();
+  if (!input || lower === 'help' || lower === 'commands') return reply('Commands:\n• how long till flat (rough estimate after enough readings)\n• how much battery left\n• what’s using my battery\n• show battery\n• scan phone\n• show phone / what do you know\n• remember my phone details\n• remember Topic: your note\n• find Topic\n• show notes\n• clear command');
+  if (/(how long|how much time|when).*(flat|empty|battery|last)|battery.*(flat|empty|last)|will.*(phone|battery).*last/.test(lower)) return reply(batteryReply());
+  if (/(battery|charge|power).*(level|percent|left|status)|^(show |check |what.s my |how much )?battery( status)?$/.test(lower)) {
+    const b = lastScan.find(([name]) => name === 'Battery');
+    return reply('Battery: ' + (b ? b[1] : 'Not scanned yet. Try scan phone.'));
+  }
+  if (/what.s using (my )?battery|battery usage|battery drain/.test(lower)) return reply('A webpage cannot see which Android apps use your battery. Open Settings → Battery → Battery usage to check. '+batteryEstimate());
+  if (/^(scan phone|refresh phone|scan)$/.test(lower)) {
+    reply('Scanning phone…');
+    scanPhone().then(() => reply(byId('scan-status').textContent)).catch(() => reply('Scan failed. Please try the Scan phone button.'));
+    return;
+  }
+  if (/^(show phone|phone info|what do you know|about my phone|show device)$/.test(lower)) {
+    return reply('Device: TANK 2 Pro; Android 15 (entered in profile).\n' + (lastScan.length ? lastScan.map(([a,b]) => a + ': ' + b).join('\n') : 'No scan yet.') + '\nSaved notes: ' + notes.length);
+  }
+  if (/^(remember my phone details|remember scan|save scan)$/.test(lower)) {
+    if (!lastScan.length) return reply('Scan the phone first.');
+    const stamp = new Date().toLocaleString();
+    save([...notes, ...lastScan.map(([topic, fact]) => ({topic:'Scan: '+topic, fact:fact+' (checked '+stamp+')'}))]);
+    return reply('Saved ' + lastScan.length + ' scan details in this browser. Use Back up notes for a separate copy.');
+  }
+  const match = input.match(/^remember\s+(.+?)\s*:\s*(.+)$/i);
+  if (match) {
+    const topic = match[1].trim().slice(0,80), fact = match[2].trim().slice(0,500);
+    save([...notes, {topic, fact}]);
+    return reply('Remembered: ' + topic + ' — ' + fact);
+  }
+  if (/^(show notes|list notes|show memory|what do you remember)$/.test(lower)) {
+    return reply(notes.length ? notes.map((n,i) => (i+1)+'. '+n.topic+' — '+n.fact).join('\n') : 'No notes saved yet. Try remember Wi-Fi: home network');
+  }
+  const find = input.match(/^(?:find|search|recall)\s+(.+)$/i);
+  if (find) {
+    const q = find[1].toLowerCase();
+    const matches = notes.filter(n => n.topic.toLowerCase().includes(q) || n.fact.toLowerCase().includes(q));
+    return reply(matches.length ? matches.map(n => n.topic+' — '+n.fact).join('\n') : 'No matching saved notes for: '+find[1]);
+  }
+  if (lower === 'clear command') { byId('command').value = ''; return reply('Command cleared.'); }
+  reply('I don’t understand that command yet. Type help to see what I can do. I’m an offline command assistant, not a full AI chatbot yet.');
+}
+const Recognition=window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition=null;
+byId('listen').onclick=()=>{
+  if (!Recognition) { byId('voice-status').textContent='Speech recognition is unavailable here. Try opening Char from an HTTPS website in Chrome, or use the keyboard.'; return; }
+  try {
+    recognition=new Recognition(); recognition.lang='en-AU'; recognition.interimResults=false; recognition.maxAlternatives=1;
+    recognition.onstart=()=>{ byId('voice-status').textContent='Listening… speak now.'; byId('listen').disabled=true; };
+    recognition.onresult=e=>{ const words=e.results[0][0].transcript; byId('command').value=words; byId('voice-status').textContent='Heard: '+words; byId('command-form').requestSubmit(); };
+    recognition.onerror=e=>{ byId('voice-status').textContent='Microphone error: '+e.error+'. Chrome may block recognition for downloaded files. Try HTTPS.'; };
+    recognition.onend=()=>{ byId('listen').disabled=false; };
+    recognition.start();
+  } catch(e) { byId('voice-status').textContent='Could not start listening: '+e.message; byId('listen').disabled=false; }
+};
+byId('stop-voice').onclick=()=>{ if(recognition) recognition.stop(); if('speechSynthesis' in window) speechSynthesis.cancel(); byId('voice-status').textContent='Voice stopped.'; };
+byId('command-form').onsubmit = event => {
+  event.preventDefault();
+  const command=byId('command').value.trim();
+  if (!command) return;
+  history.push({who:'You',text:command});
+  answerCommand(command);
+  history.push({who:'Char',text:byId('reply').textContent});
+  history=history.slice(-30);storeArray(historyKey,history);renderHistory();
+};
+
+showScreen();
+scanPhone();
+addEventListener('resize', showScreen);
+render();
+renderHistory();
+</script>
+</html>
