@@ -1,0 +1,51 @@
+/* Char V7: local conversational extension for working V6. */
+(() => {
+  'use strict';
+  const previous = answerCommand;
+  const clean = s => String(s).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu,' ').replace(/\s+/g,' ').trim();
+  const contextKey = 'char-v7-context';
+  let context = '';
+  try { context = localStorage.getItem(contextKey) || ''; } catch {}
+  function focus(topic) { context = topic; try { localStorage.setItem(contextKey, topic); } catch {} }
+  function teach(topic, fact) {
+    topic = topic.trim().slice(0,80); fact = fact.trim().slice(0,500);
+    if (!topic || !fact) return reply('Tell me a topic and what to remember.');
+    save([...notes.filter(n => clean(n.topic) !== clean(topic)), {topic,fact}]);
+    focus(topic); return reply('I’ll remember '+topic+' — '+fact+'.');
+  }
+  function recall(q) {
+    const query = clean(q);
+    if (!query) return [];
+    return notes.filter(n => clean(n.topic) === query || (' '+clean(n.topic)+' ').includes(' '+query+' '));
+  }
+  function show(matches) { focus(matches[0].topic); return reply(matches.map(n => n.topic+' — '+n.fact).join('\n')); }
+  answerCommand = function(raw) {
+    const input = raw.trim().replace(/^char\b[,! ]*/i,'').trim();
+    const lower = clean(input);
+    let m;
+    if (/^(hi|hello|hey|g day|good morning|good afternoon|good evening)$/.test(lower)) return reply('G’day! What are we working on today?');
+    if (/^(how are you|how are you doing)$/.test(lower)) return reply('Ready to help! What’s on your mind?');
+    if (/^(thanks|thank you|cheers|ta)$/.test(lower)) return reply('No worries!');
+    if (/^(who are you|what are you)$/.test(lower)) return reply('I’m Char V7, your browser-based assistant. I can remember what you teach me, use voice and explore some phone details. I use rules locally; open-ended AI requires a connected relay.');
+    if (/^(what are your values|what are your principles)$/.test(lower)) return reply('My design principles are compassion, balance, humour, freedom of thought and careful judgement. I should be honest about what I know and what I do not know.');
+    if ((m=input.match(/^(?:remember(?: that)?\s+)?my (name|favourite .+?|favorite .+?|job|birthday|pet(?: s|’s|'s)? name)\s+is\s+(.+)$/i))) return teach('My '+m[1],m[2]);
+    if ((m=input.match(/^remember\s+(.+?)\s*:\s*(.+)$/i))) return teach(m[1],m[2]);
+    if (/^(tell me more|what else do you know about it|what did i just tell you|what were we talking about)$/.test(lower)) {
+      const matches=recall(context); return matches.length ? show(matches) : reply('I don’t have a recent saved topic to recall. Teach me something first.');
+    }
+    if ((m=input.match(/^(?:what(?:'s| is) my|do you remember my)\s+(.+?)[?!.]*$/i))) {
+      const matches=recall('My '+m[1]); if(matches.length) return show(matches);
+    }
+    if ((m=input.match(/^(?:tell me about|what do you know about|do you remember)\s+(.+?)[?!.]*$/i))) {
+      const matches=recall(m[1]); if(matches.length) return show(matches);
+    }
+    const direct=recall(input); if(direct.length) return show(direct);
+    return previous(raw);
+  };
+  document.title='Char V7 · Learning and personality';
+  document.querySelector('h1').textContent='Char V7';
+  document.querySelector('header p').textContent='Voice · local learning · memory · optional AI';
+  const help=document.querySelector('.examples');
+  if(help) help.textContent += ' · My name is Alex · What is my name? · Tell me more · What are your values?';
+  byId('reply').textContent='G’day! Char V7 is ready. Teach me something or ask what I remember.';
+})();
